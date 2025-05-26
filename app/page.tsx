@@ -2,123 +2,105 @@
 
 import type React from "react"
 
-import { useState, useRef } from "react"
-import { Plus, Clock, MapPin, Users, Sun, Moon, Share, Home, ChevronDown, ChevronUp, Send } from "lucide-react"
-
-// Types
-type Suggestion = {
-  id: string
-  content: string
-  type: "time" | "location" | "general"
-  author: string
-}
-
-type Attendee = {
-  id: string
-  name: string
-  status: "going" | "maybe" | "not-going"
-}
-
-type Hang = {
-  id: string
-  title: string
-  date: string
-  time: string
-  location: string
-  description?: string
-  attendees: Attendee[]
-  maxAttendees: number
-  userRSVP?: "going" | "maybe" | "not-going" | null
-  host: string
-  suggestions: Suggestion[]
-}
+import { useState, useEffect } from "react"
+import { supabase, getCurrentUser, getHangs, createHang, updateRSVP, addSuggestion } from "@/lib/supabase"
+import AuthForm from "@/components/AuthForm"
+import type { User, Hang } from "@/lib/supabase"
+import { Plus, Clock, MapPin, Users, Sun, Moon, Share, Home, ChevronDown, ChevronUp, Send, LogOut } from "lucide-react"
 
 export default function LetsHangApp() {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
   const [currentView, setCurrentView] = useState<"home" | "create" | "past">("home")
-  const [hangs, setHangs] = useState<Hang[]>([
-    {
-      id: "ABC123",
-      title: "Shared Hang",
-      date: "2024-01-15",
-      time: "19:00",
-      location: "TBD",
-      description: "This is a shared hang! The host will update details soon.",
-      attendees: [
-        { id: "1", name: "Friend", status: "going" },
-        { id: "2", name: "Freddy", status: "going" },
-      ],
-      maxAttendees: 10,
-      userRSVP: "going",
-      host: "Friend",
-      suggestions: [],
-    },
-  ])
-  const [expandedHangId, setExpandedHangId] = useState<string | null>("ABC123")
+  const [hangs, setHangs] = useState<Hang[]>([])
+  const [expandedHangId, setExpandedHangId] = useState<string | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [selectedSuggestionType, setSelectedSuggestionType] = useState<"time" | "location" | "general">("general")
-  const formRef = useRef<HTMLFormElement>(null)
-  const suggestionRef = useRef<HTMLFormElement>(null)
 
-  const handleCreateHang = (e: React.FormEvent) => {
+  useEffect(() => {
+    // Check if user is logged in
+    const checkUser = async () => {
+      const { data } = await getCurrentUser()
+      setUser(data)
+      setLoading(false)
+    }
+
+    checkUser()
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const { data } = await getCurrentUser()
+        setUser(data)
+      } else {
+        setUser(null)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    // Load hangs when user is authenticated
+    if (user) {
+      loadHangs()
+    }
+  }, [user])
+
+  const loadHangs = async () => {
+    const { data, error } = await getHangs()
+    if (data && !error) {
+      setHangs(data)
+    }
+  }
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+    setHangs([])
+  }
+
+  const handleCreateHang = async (e: React.FormEvent) => {
     e.preventDefault()
     const formData = new FormData(e.target as HTMLFormElement)
 
-    const newHang: Hang = {
-      id: Math.random().toString(36).substr(2, 6).toUpperCase(),
+    const hangData = {
       title: formData.get("title") as string,
       date: formData.get("date") as string,
       time: formData.get("time") as string,
       location: formData.get("location") as string,
       description: (formData.get("description") as string) || "",
-      attendees: [{ id: "user", name: "Freddy", status: "going" }],
-      maxAttendees: Number.parseInt(formData.get("maxAttendees") as string) || 10,
-      userRSVP: "going",
-      host: "Freddy",
-      suggestions: [],
+      max_attendees: Number.parseInt(formData.get("maxAttendees") as string) || 10,
+      status: "active" as const,
     }
 
-    setHangs([...hangs, newHang])
-    setCurrentView("home")
-    if (formRef.current) {
-      formRef.current.reset()
+    const { data, error } = await createHang(hangData)
+    if (data && !error) {
+      await loadHangs()
+      setCurrentView("home")
+      ;(e.target as HTMLFormElement).reset()
     }
   }
 
-  const handleRSVP = (hangId: string, rsvp: "going" | "maybe" | "not-going") => {
-    setHangs(
-      hangs.map((hang) => {
-        if (hang.id === hangId) {
-          const updatedAttendees = hang.attendees.map((attendee) =>
-            attendee.name === "Freddy" ? { ...attendee, status: rsvp } : attendee,
-          )
-          return { ...hang, userRSVP: rsvp, attendees: updatedAttendees }
-        }
-        return hang
-      }),
-    )
+  const handleRSVP = async (hangId: string, status: "going" | "maybe" | "not-going") => {
+    const { error } = await updateRSVP(hangId, status)
+    if (!error) {
+      await loadHangs()
+    }
   }
 
-  const handleAddSuggestion = (e: React.FormEvent, hangId: string) => {
+  const handleAddSuggestion = async (e: React.FormEvent, hangId: string) => {
     e.preventDefault()
     const formData = new FormData(e.target as HTMLFormElement)
     const content = formData.get("suggestion") as string
 
     if (content?.trim()) {
-      const newSuggestion: Suggestion = {
-        id: Math.random().toString(36).substr(2, 9),
-        content: content.trim(),
-        type: selectedSuggestionType,
-        author: "Freddy",
-      }
-
-      setHangs(
-        hangs.map((hang) =>
-          hang.id === hangId ? { ...hang, suggestions: [...hang.suggestions, newSuggestion] } : hang,
-        ),
-      )
-
-      if (suggestionRef.current) {
-        suggestionRef.current.reset()
+      const { error } = await addSuggestion(hangId, selectedSuggestionType, content.trim())
+      if (!error) {
+        await loadHangs()
+        ;(e.target as HTMLFormElement).reset()
       }
     }
   }
@@ -133,18 +115,19 @@ export default function LetsHangApp() {
     }
   }
 
-  const getRSVPColor = (rsvp: string | null, currentRSVP: string) => {
-    if (rsvp === currentRSVP) {
-      return currentRSVP === "going" ? "bg-black text-white" : "bg-gray-200 text-black border border-gray-300"
-    }
-    return "bg-white border border-gray-300 text-black hover:bg-gray-50"
+  if (loading) {
+    return (
+      <div className="max-w-sm mx-auto min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    )
   }
 
-  const getSuggestionTypeColor = (type: string) => {
-    if (selectedSuggestionType === type) {
-      return type === "general" ? "bg-black text-white" : "bg-gray-200 text-black"
-    }
-    return "bg-gray-100 text-gray-600 hover:bg-gray-200"
+  if (!user) {
+    return <AuthForm isDarkMode={isDarkMode} />
   }
 
   const themeClasses = isDarkMode ? "bg-gray-900 text-white" : "bg-white text-black"
@@ -155,7 +138,7 @@ export default function LetsHangApp() {
       <div className={`flex justify-between items-center p-4 ${isDarkMode ? "bg-gray-900" : "bg-white"}`}>
         <div>
           <h1 className="text-xl font-bold">Let's Hang</h1>
-          <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>Hey Freddy! 👋</p>
+          <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>Hey {user.name}! 👋</p>
         </div>
         <div className="flex items-center gap-3">
           {/* Dark Mode Toggle */}
@@ -175,6 +158,9 @@ export default function LetsHangApp() {
             </div>
             <Moon className="w-4 h-4 text-gray-600" />
           </div>
+          <button onClick={handleSignOut} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -187,7 +173,7 @@ export default function LetsHangApp() {
               <div className="space-y-4">
                 {hangs.map((hang) => {
                   const isExpanded = expandedHangId === hang.id
-                  const goingCount = hang.attendees.filter((a) => a.status === "going").length
+                  const goingCount = hang.attendees?.filter((a) => a.status === "going").length || 0
 
                   return (
                     <div
@@ -205,7 +191,7 @@ export default function LetsHangApp() {
                           <div className="text-right">
                             <div className="text-2xl font-bold">{goingCount}</div>
                             <div className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                              of {hang.maxAttendees}
+                              of {hang.max_attendees}
                             </div>
                           </div>
                           <button onClick={() => shareHang(hang)} className="p-1">
@@ -224,7 +210,7 @@ export default function LetsHangApp() {
                           {hang.location}
                         </div>
                         <div className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                          Hosted by {hang.host}
+                          Hosted by {hang.host?.name || "Unknown"}
                         </div>
                       </div>
 
@@ -233,7 +219,7 @@ export default function LetsHangApp() {
                         <button
                           onClick={() => handleRSVP(hang.id, "going")}
                           className={`flex-1 text-sm py-2 px-3 rounded-md transition-all duration-200 ${
-                            hang.userRSVP === "going"
+                            hang.user_rsvp === "going"
                               ? "bg-black text-white"
                               : isDarkMode
                                 ? "bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600"
@@ -245,7 +231,7 @@ export default function LetsHangApp() {
                         <button
                           onClick={() => handleRSVP(hang.id, "maybe")}
                           className={`flex-1 text-sm py-2 px-3 rounded-md transition-all duration-200 ${
-                            hang.userRSVP === "maybe"
+                            hang.user_rsvp === "maybe"
                               ? isDarkMode
                                 ? "bg-gray-600 text-white"
                                 : "bg-gray-200 text-black border border-gray-300"
@@ -259,7 +245,7 @@ export default function LetsHangApp() {
                         <button
                           onClick={() => handleRSVP(hang.id, "not-going")}
                           className={`flex-1 text-sm py-2 px-3 rounded-md transition-all duration-200 ${
-                            hang.userRSVP === "not-going"
+                            hang.user_rsvp === "not-going"
                               ? isDarkMode
                                 ? "bg-gray-600 text-white"
                                 : "bg-gray-200 text-black border border-gray-300"
@@ -290,7 +276,7 @@ export default function LetsHangApp() {
                           <div>
                             <h4 className="font-medium mb-2">About this hang</h4>
                             <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-                              {hang.description}
+                              {hang.description || "No description provided."}
                             </p>
                           </div>
 
@@ -299,15 +285,15 @@ export default function LetsHangApp() {
                             <h4 className="font-medium mb-2">Who's going ({goingCount})</h4>
                             <div className="space-y-2">
                               {hang.attendees
-                                .filter((attendee) => attendee.status === "going")
+                                ?.filter((attendee) => attendee.status === "going")
                                 .map((attendee) => (
                                   <div key={attendee.id} className="flex items-center gap-3">
                                     <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                                      <span className="text-xs font-medium">
-                                        {attendee.name.charAt(0).toUpperCase()}
+                                      <span className="text-xs font-medium text-black">
+                                        {attendee.user?.name?.charAt(0).toUpperCase() || "?"}
                                       </span>
                                     </div>
-                                    <span className="text-sm">{attendee.name}</span>
+                                    <span className="text-sm">{attendee.user?.name || "Unknown"}</span>
                                     <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
                                       {attendee.status}
                                     </span>
@@ -324,32 +310,40 @@ export default function LetsHangApp() {
                             <div className="flex gap-1 mb-3">
                               <button
                                 onClick={() => setSelectedSuggestionType("time")}
-                                className={`px-3 py-1 text-xs rounded transition-colors ${getSuggestionTypeColor("time")}`}
+                                className={`px-3 py-1 text-xs rounded transition-colors ${
+                                  selectedSuggestionType === "time"
+                                    ? "bg-gray-200 text-black"
+                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                }`}
                               >
                                 <Clock className="w-3 h-3 inline mr-1" />
                                 Time
                               </button>
                               <button
                                 onClick={() => setSelectedSuggestionType("location")}
-                                className={`px-3 py-1 text-xs rounded transition-colors ${getSuggestionTypeColor("location")}`}
+                                className={`px-3 py-1 text-xs rounded transition-colors ${
+                                  selectedSuggestionType === "location"
+                                    ? "bg-gray-200 text-black"
+                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                }`}
                               >
                                 <MapPin className="w-3 h-3 inline mr-1" />
                                 Location
                               </button>
                               <button
                                 onClick={() => setSelectedSuggestionType("general")}
-                                className={`px-3 py-1 text-xs rounded transition-colors ${getSuggestionTypeColor("general")}`}
+                                className={`px-3 py-1 text-xs rounded transition-colors ${
+                                  selectedSuggestionType === "general"
+                                    ? "bg-black text-white"
+                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                }`}
                               >
                                 General
                               </button>
                             </div>
 
                             {/* Suggestion input */}
-                            <form
-                              ref={suggestionRef}
-                              onSubmit={(e) => handleAddSuggestion(e, hang.id)}
-                              className="flex gap-2"
-                            >
+                            <form onSubmit={(e) => handleAddSuggestion(e, hang.id)} className="flex gap-2">
                               <textarea
                                 name="suggestion"
                                 placeholder={`Type your ${selectedSuggestionType} suggestion here...`}
@@ -373,13 +367,18 @@ export default function LetsHangApp() {
                             </form>
 
                             {/* Suggestions list */}
-                            {hang.suggestions.length > 0 && (
+                            {hang.suggestions && hang.suggestions.length > 0 && (
                               <div className="mt-3 space-y-2">
                                 {hang.suggestions.map((suggestion) => (
-                                  <div key={suggestion.id} className="p-2 bg-gray-50 rounded text-sm">
+                                  <div
+                                    key={suggestion.id}
+                                    className={`p-2 rounded text-sm ${isDarkMode ? "bg-gray-700" : "bg-gray-50"}`}
+                                  >
                                     <div className="flex items-center gap-2 mb-1">
-                                      <span className="font-medium">{suggestion.author}</span>
-                                      <span className="text-xs bg-gray-200 px-2 py-1 rounded">{suggestion.type}</span>
+                                      <span className="font-medium">{suggestion.user?.name || "Unknown"}</span>
+                                      <span className="text-xs bg-gray-200 text-gray-800 px-2 py-1 rounded">
+                                        {suggestion.type}
+                                      </span>
                                     </div>
                                     <p>{suggestion.content}</p>
                                   </div>
@@ -419,13 +418,15 @@ export default function LetsHangApp() {
               <h2 className="text-lg font-semibold">Create Hangout</h2>
             </div>
 
-            <form ref={formRef} onSubmit={handleCreateHang} className="space-y-4">
+            <form onSubmit={handleCreateHang} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Hang Title *</label>
                 <input
                   name="title"
                   placeholder="What are you planning?"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className={`w-full px-3 py-2 border rounded-md ${
+                    isDarkMode ? "border-gray-600 bg-gray-700 text-white" : "border-gray-300 bg-white text-black"
+                  }`}
                   required
                 />
               </div>
@@ -436,7 +437,9 @@ export default function LetsHangApp() {
                   <input
                     name="date"
                     type="date"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      isDarkMode ? "border-gray-600 bg-gray-700 text-white" : "border-gray-300 bg-white text-black"
+                    }`}
                     required
                   />
                 </div>
@@ -445,7 +448,9 @@ export default function LetsHangApp() {
                   <input
                     name="time"
                     type="time"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      isDarkMode ? "border-gray-600 bg-gray-700 text-white" : "border-gray-300 bg-white text-black"
+                    }`}
                     required
                   />
                 </div>
@@ -456,7 +461,9 @@ export default function LetsHangApp() {
                 <input
                   name="location"
                   placeholder="Where should everyone meet?"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className={`w-full px-3 py-2 border rounded-md ${
+                    isDarkMode ? "border-gray-600 bg-gray-700 text-white" : "border-gray-300 bg-white text-black"
+                  }`}
                   required
                 />
               </div>
@@ -466,7 +473,9 @@ export default function LetsHangApp() {
                 <textarea
                   name="description"
                   placeholder="Tell everyone what to expect..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md resize-none"
+                  className={`w-full px-3 py-2 border rounded-md resize-none ${
+                    isDarkMode ? "border-gray-600 bg-gray-700 text-white" : "border-gray-300 bg-white text-black"
+                  }`}
                   rows={3}
                 />
               </div>
@@ -477,11 +486,18 @@ export default function LetsHangApp() {
                   name="maxAttendees"
                   type="number"
                   placeholder="10"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className={`w-full px-3 py-2 border rounded-md ${
+                    isDarkMode ? "border-gray-600 bg-gray-700 text-white" : "border-gray-300 bg-white text-black"
+                  }`}
                 />
               </div>
 
-              <button type="submit" className="w-full px-4 py-3 bg-black text-white rounded-md font-medium">
+              <button
+                type="submit"
+                className={`w-full px-4 py-3 rounded-md font-medium ${
+                  isDarkMode ? "bg-white text-black hover:bg-gray-200" : "bg-black text-white hover:bg-gray-800"
+                }`}
+              >
                 Create Hangout
               </button>
             </form>
