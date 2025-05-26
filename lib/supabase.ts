@@ -1,9 +1,12 @@
 import { createClient } from "@supabase/supabase-js"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY!
+// Try multiple environment variable names
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || ""
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ""
+
+// Only create client if we have the required values
+export const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null
 
 // Database types
 export interface User {
@@ -57,22 +60,28 @@ export interface Suggestion {
 
 // Auth functions
 export const signInWithEmail = async (email: string) => {
+  if (!supabase) throw new Error("Supabase not initialized")
+
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
+      emailRedirectTo: "https://lets-hang-simple-x4kp.vercel.app",
     },
   })
   return { error }
 }
 
 export const signOut = async () => {
+  if (!supabase) throw new Error("Supabase not initialized")
+
   const { error } = await supabase.auth.signOut()
   return { error }
 }
 
 // User functions
 export const createOrUpdateUser = async (userData: Partial<User>) => {
+  if (!supabase) throw new Error("Supabase not initialized")
+
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) throw new Error("Not authenticated")
 
@@ -90,6 +99,8 @@ export const createOrUpdateUser = async (userData: Partial<User>) => {
 }
 
 export const getCurrentUser = async () => {
+  if (!supabase) return { data: null, error: new Error("Supabase not initialized") }
+
   const { data: authUser } = await supabase.auth.getUser()
   if (!authUser.user) return { data: null, error: null }
 
@@ -100,6 +111,8 @@ export const getCurrentUser = async () => {
 
 // Hang functions
 export const createHang = async (hangData: Omit<Hang, "id" | "host_id" | "created_at" | "updated_at">) => {
+  if (!supabase) throw new Error("Supabase not initialized")
+
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) throw new Error("Not authenticated")
 
@@ -125,6 +138,8 @@ export const createHang = async (hangData: Omit<Hang, "id" | "host_id" | "create
 }
 
 export const getHangs = async () => {
+  if (!supabase) return { data: [], error: new Error("Supabase not initialized") }
+
   const { data: user } = await supabase.auth.getUser()
 
   const { data, error } = await supabase
@@ -160,6 +175,8 @@ export const getHangs = async () => {
 }
 
 export const updateHang = async (hangId: string, updates: Partial<Hang>) => {
+  if (!supabase) throw new Error("Supabase not initialized")
+
   const { data, error } = await supabase
     .from("hangs")
     .update({
@@ -174,6 +191,8 @@ export const updateHang = async (hangId: string, updates: Partial<Hang>) => {
 }
 
 export const updateRSVP = async (hangId: string, status: "going" | "maybe" | "not-going") => {
+  if (!supabase) throw new Error("Supabase not initialized")
+
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) throw new Error("Not authenticated")
 
@@ -191,6 +210,8 @@ export const updateRSVP = async (hangId: string, status: "going" | "maybe" | "no
 }
 
 export const addSuggestion = async (hangId: string, type: "time" | "location" | "general", content: string) => {
+  if (!supabase) throw new Error("Supabase not initialized")
+
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) throw new Error("Not authenticated")
 
@@ -212,6 +233,8 @@ export const addSuggestion = async (hangId: string, type: "time" | "location" | 
 }
 
 export const voteSuggestion = async (suggestionId: string) => {
+  if (!supabase) throw new Error("Supabase not initialized")
+
   const { data, error } = await supabase.rpc("increment_suggestion_votes", { suggestion_id: suggestionId })
 
   return { data, error }
@@ -219,6 +242,8 @@ export const voteSuggestion = async (suggestionId: string) => {
 
 // Create the RPC function for voting
 export const createVotingFunction = async () => {
+  if (!supabase) throw new Error("Supabase not initialized")
+
   const { error } = await supabase.rpc("exec_sql", {
     sql: `
       CREATE OR REPLACE FUNCTION increment_suggestion_votes(suggestion_id UUID)
