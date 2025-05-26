@@ -147,22 +147,24 @@ export default function LetsHangApp() {
     return "bg-gray-100 text-gray-600 hover:bg-gray-200"
   }
 
-  const themeClasses = isDarkMode ? "bg-gray-100 text-black" : "bg-white text-black"
+  const themeClasses = isDarkMode ? "bg-gray-900 text-white" : "bg-white text-black"
 
   return (
     <div className={`max-w-sm mx-auto min-h-screen transition-all duration-300 ${themeClasses}`}>
       {/* Header */}
-      <div className="flex justify-between items-center p-4">
+      <div className={`flex justify-between items-center p-4 ${isDarkMode ? "bg-gray-900" : "bg-white"}`}>
         <div>
           <h1 className="text-xl font-bold">Let's Hang</h1>
-          <p className="text-sm text-gray-600">Hey Freddy! 👋</p>
+          <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>Hey Freddy! 👋</p>
         </div>
         <div className="flex items-center gap-3">
           {/* Dark Mode Toggle */}
           <div className="flex items-center gap-2">
             <Sun className="w-4 h-4 text-yellow-500" />
             <div
-              className="relative w-12 h-6 bg-gray-300 rounded-full cursor-pointer transition-colors"
+              className={`relative w-12 h-6 rounded-full cursor-pointer transition-colors ${
+                isDarkMode ? "bg-gray-600" : "bg-gray-300"
+              }`}
               onClick={() => setIsDarkMode(!isDarkMode)}
             >
               <div
@@ -173,15 +175,6 @@ export default function LetsHangApp() {
             </div>
             <Moon className="w-4 h-4 text-gray-600" />
           </div>
-          {currentView === "home" && (
-            <button
-              onClick={() => setCurrentView("create")}
-              className="px-4 py-2 bg-black text-white rounded-md font-medium flex items-center gap-1"
-            >
-              <Plus className="w-4 h-4" />
-              Create
-            </button>
-          )}
         </div>
       </div>
 
@@ -197,7 +190,12 @@ export default function LetsHangApp() {
                   const goingCount = hang.attendees.filter((a) => a.status === "going").length
 
                   return (
-                    <div key={hang.id} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                    <div
+                      key={hang.id}
+                      className={`rounded-lg border p-4 shadow-sm ${
+                        isDarkMode ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-200 text-black"
+                      }`}
+                    >
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex items-center gap-2">
                           <Users className="w-5 h-5 text-gray-400" />
@@ -206,7 +204,9 @@ export default function LetsHangApp() {
                         <div className="flex items-center gap-2">
                           <div className="text-right">
                             <div className="text-2xl font-bold">{goingCount}</div>
-                            <div className="text-xs text-gray-500">of {hang.maxAttendees}</div>
+                            <div className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                              of {hang.maxAttendees}
+                            </div>
                           </div>
                           <button onClick={() => shareHang(hang)} className="p-1">
                             <Share className="w-5 h-5 text-gray-400" />
@@ -215,34 +215,58 @@ export default function LetsHangApp() {
                       </div>
 
                       <div className="space-y-1 mb-3">
-                        <div className="flex items-center text-sm text-gray-600">
+                        <div className={`flex items-center text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
                           <Clock className="w-4 h-4 mr-2" />
                           {hang.date} at {hang.time}
                         </div>
-                        <div className="flex items-center text-sm text-gray-600">
+                        <div className={`flex items-center text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
                           <MapPin className="w-4 h-4 mr-2" />
                           {hang.location}
                         </div>
-                        <div className="text-sm text-gray-500">Hosted by {hang.host}</div>
+                        <div className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                          Hosted by {hang.host}
+                        </div>
                       </div>
 
                       {/* RSVP Buttons */}
                       <div className="flex gap-2 mb-3">
                         <button
                           onClick={() => handleRSVP(hang.id, "going")}
-                          className={`flex-1 text-sm py-2 px-3 rounded-md transition-all duration-200 ${getRSVPColor(hang.userRSVP, "going")}`}
+                          className={`flex-1 text-sm py-2 px-3 rounded-md transition-all duration-200 ${
+                            hang.userRSVP === "going"
+                              ? "bg-black text-white"
+                              : isDarkMode
+                                ? "bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600"
+                                : "bg-white border border-gray-300 text-black hover:bg-gray-50"
+                          }`}
                         >
                           Going
                         </button>
                         <button
                           onClick={() => handleRSVP(hang.id, "maybe")}
-                          className={`flex-1 text-sm py-2 px-3 rounded-md transition-all duration-200 ${getRSVPColor(hang.userRSVP, "maybe")}`}
+                          className={`flex-1 text-sm py-2 px-3 rounded-md transition-all duration-200 ${
+                            hang.userRSVP === "maybe"
+                              ? isDarkMode
+                                ? "bg-gray-600 text-white"
+                                : "bg-gray-200 text-black border border-gray-300"
+                              : isDarkMode
+                                ? "bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600"
+                                : "bg-white border border-gray-300 text-black hover:bg-gray-50"
+                          }`}
                         >
                           Maybe
                         </button>
                         <button
                           onClick={() => handleRSVP(hang.id, "not-going")}
-                          className={`flex-1 text-sm py-2 px-3 rounded-md transition-all duration-200 ${getRSVPColor(hang.userRSVP, "not-going")}`}
+                          className={`flex-1 text-sm py-2 px-3 rounded-md transition-all duration-200 ${
+                            hang.userRSVP === "not-going"
+                              ? isDarkMode
+                                ? "bg-gray-600 text-white"
+                                : "bg-gray-200 text-black border border-gray-300"
+                              : isDarkMode
+                                ? "bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600"
+                                : "bg-white border border-gray-300 text-black hover:bg-gray-50"
+                          }`}
                         >
                           Not Going
                         </button>
@@ -251,7 +275,7 @@ export default function LetsHangApp() {
                       {/* Expand/Collapse Button */}
                       <button
                         onClick={() => setExpandedHangId(isExpanded ? null : hang.id)}
-                        className="w-full text-sm text-gray-600 flex items-center justify-center py-2"
+                        className={`w-full text-sm flex items-center justify-center py-2 ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}
                       >
                         {isExpanded ? <ChevronUp className="w-4 h-4 mr-1" /> : <ChevronDown className="w-4 h-4 mr-1" />}
                         {isExpanded ? "Show Less" : "Show More"}
@@ -259,11 +283,15 @@ export default function LetsHangApp() {
 
                       {/* Expanded Content */}
                       {isExpanded && (
-                        <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+                        <div
+                          className={`mt-4 pt-4 border-t space-y-4 ${isDarkMode ? "border-gray-700" : "border-gray-100"}`}
+                        >
                           {/* About */}
                           <div>
                             <h4 className="font-medium mb-2">About this hang</h4>
-                            <p className="text-sm text-gray-700">{hang.description}</p>
+                            <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                              {hang.description}
+                            </p>
                           </div>
 
                           {/* Who's going */}
@@ -325,12 +353,20 @@ export default function LetsHangApp() {
                               <textarea
                                 name="suggestion"
                                 placeholder={`Type your ${selectedSuggestionType} suggestion here...`}
-                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm resize-none"
+                                className={`flex-1 px-3 py-2 border rounded-md text-sm resize-none ${
+                                  isDarkMode
+                                    ? "border-gray-600 bg-gray-700 text-white placeholder-gray-400"
+                                    : "border-gray-300 bg-white text-black"
+                                }`}
                                 rows={2}
                               />
                               <button
                                 type="submit"
-                                className="px-3 py-2 bg-black text-white rounded-md hover:bg-gray-800"
+                                className={`px-3 py-2 rounded-md transition-colors ${
+                                  isDarkMode
+                                    ? "bg-white text-black hover:bg-gray-200"
+                                    : "bg-black text-white hover:bg-gray-800"
+                                }`}
                               >
                                 <Send className="w-4 h-4" />
                               </button>
@@ -469,12 +505,22 @@ export default function LetsHangApp() {
       </div>
 
       {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 px-4 py-2 bg-white border-t border-gray-200">
+      <div
+        className={`fixed bottom-0 left-0 right-0 px-4 py-2 border-t transition-all duration-200 ${
+          isDarkMode ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"
+        }`}
+      >
         <div className="flex justify-around max-w-sm mx-auto">
           <button
             onClick={() => setCurrentView("home")}
             className={`flex flex-col items-center p-2 transition-all duration-200 ${
-              currentView === "home" ? "text-black" : "text-gray-400"
+              currentView === "home"
+                ? isDarkMode
+                  ? "text-white"
+                  : "text-black"
+                : isDarkMode
+                  ? "text-gray-500"
+                  : "text-gray-400"
             }`}
           >
             <Home className="w-5 h-5 mb-1" />
@@ -483,7 +529,13 @@ export default function LetsHangApp() {
           <button
             onClick={() => setCurrentView("create")}
             className={`flex flex-col items-center p-2 transition-all duration-200 ${
-              currentView === "create" ? "text-black" : "text-gray-400"
+              currentView === "create"
+                ? isDarkMode
+                  ? "text-white"
+                  : "text-black"
+                : isDarkMode
+                  ? "text-gray-500"
+                  : "text-gray-400"
             }`}
           >
             <Plus className="w-5 h-5 mb-1" />
@@ -492,7 +544,13 @@ export default function LetsHangApp() {
           <button
             onClick={() => setCurrentView("past")}
             className={`flex flex-col items-center p-2 transition-all duration-200 ${
-              currentView === "past" ? "text-black" : "text-gray-400"
+              currentView === "past"
+                ? isDarkMode
+                  ? "text-white"
+                  : "text-black"
+                : isDarkMode
+                  ? "text-gray-500"
+                  : "text-gray-400"
             }`}
           >
             <Clock className="w-5 h-5 mb-1" />
