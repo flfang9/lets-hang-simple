@@ -3,7 +3,15 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { supabase, getCurrentUser, getHangs, createHang, updateRSVP, addSuggestion } from "@/lib/supabase"
+import {
+  supabase,
+  getCurrentUser,
+  getHangs,
+  createHang,
+  updateRSVP,
+  addSuggestion,
+  createOrUpdateUser,
+} from "@/lib/supabase"
 import AuthForm from "@/components/AuthForm"
 import type { User, Hang } from "@/lib/supabase"
 import { Plus, Clock, MapPin, Users, Sun, Moon, Share, Home, ChevronDown, ChevronUp, Send, LogOut } from "lucide-react"
@@ -20,36 +28,76 @@ export default function LetsHangApp() {
   useEffect(() => {
     // Check if user is logged in
     const checkUser = async () => {
-      const { data } = await getCurrentUser()
-      setUser(data)
+      if (!supabase) {
+        setLoading(false)
+        return
+      }
+
+      const { data: authUser } = await supabase.auth.getUser()
+
+      if (authUser.user) {
+        // Try to get user from our users table
+        const { data: userData } = await getCurrentUser()
+
+        if (userData) {
+          setUser(userData)
+        } else {
+          // Create user record if it doesn't exist
+          const { data: newUser } = await createOrUpdateUser({
+            name: authUser.user.email?.split("@")[0] || "User",
+            email: authUser.user.email || "",
+          })
+          if (newUser) {
+            setUser(newUser)
+          }
+        }
+      }
+
       setLoading(false)
     }
 
     checkUser()
 
     // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const { data } = await getCurrentUser()
-        setUser(data)
-      } else {
-        setUser(null)
-      }
-    })
+    if (supabase) {
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === "SIGNED_IN" && session?.user) {
+          // User just signed in
+          const { data: userData } = await getCurrentUser()
 
-    return () => subscription.unsubscribe()
+          if (userData) {
+            setUser(userData)
+          } else {
+            // Create user record
+            const { data: newUser } = await createOrUpdateUser({
+              name: session.user.email?.split("@")[0] || "User",
+              email: session.user.email || "",
+            })
+            if (newUser) {
+              setUser(newUser)
+            }
+          }
+        } else if (event === "SIGNED_OUT") {
+          setUser(null)
+        }
+      })
+
+      return () => subscription.unsubscribe()
+    }
   }, [])
 
   useEffect(() => {
     // Load hangs when user is authenticated
-    if (user) {
+    if (user && supabase) {
       loadHangs()
     }
   }, [user])
 
   const loadHangs = async () => {
+    if (!supabase) return
+
     const { data, error } = await getHangs()
     if (data && !error) {
       setHangs(data)
@@ -57,6 +105,8 @@ export default function LetsHangApp() {
   }
 
   const handleSignOut = async () => {
+    if (!supabase) return
+
     await supabase.auth.signOut()
     setUser(null)
     setHangs([])
@@ -64,6 +114,8 @@ export default function LetsHangApp() {
 
   const handleCreateHang = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!supabase) return
+
     const formData = new FormData(e.target as HTMLFormElement)
 
     const hangData = {
@@ -85,6 +137,8 @@ export default function LetsHangApp() {
   }
 
   const handleRSVP = async (hangId: string, status: "going" | "maybe" | "not-going") => {
+    if (!supabase) return
+
     const { error } = await updateRSVP(hangId, status)
     if (!error) {
       await loadHangs()
@@ -93,6 +147,8 @@ export default function LetsHangApp() {
 
   const handleAddSuggestion = async (e: React.FormEvent, hangId: string) => {
     e.preventDefault()
+    if (!supabase) return
+
     const formData = new FormData(e.target as HTMLFormElement)
     const content = formData.get("suggestion") as string
 
@@ -121,6 +177,17 @@ export default function LetsHangApp() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black mx-auto mb-4"></div>
           <p>Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!supabase) {
+    return (
+      <div className="max-w-sm mx-auto min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold mb-4">Configuration Error</h2>
+          <p className="text-gray-600">Supabase is not properly configured.</p>
         </div>
       </div>
     )
