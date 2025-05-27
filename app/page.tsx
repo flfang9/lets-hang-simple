@@ -11,7 +11,7 @@ import {
   updateRSVP,
   addSuggestion,
   createOrUpdateUser,
-} from "@/lib/supabase"
+} from "@/lib/flexible-supabase"
 import AuthForm from "@/components/AuthForm"
 import type { User, Hang } from "@/lib/supabase"
 import { Plus, Clock, MapPin, Users, Sun, Moon, Share, Home, LogOut } from "lucide-react"
