@@ -19,78 +19,152 @@ import { Plus, Clock, MapPin, Users, Sun, Moon, Share, Home, ChevronDown, Chevro
 export default function LetsHangApp() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [debugInfo, setDebugInfo] = useState<string[]>([])
   const [currentView, setCurrentView] = useState<"home" | "create" | "past">("home")
   const [hangs, setHangs] = useState<Hang[]>([])
   const [expandedHangId, setExpandedHangId] = useState<string | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [selectedSuggestionType, setSelectedSuggestionType] = useState<"time" | "location" | "general">("general")
 
+  const addDebug = (message: string) => {
+    console.log(message)
+    setDebugInfo((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${message}`])
+  }
+
   useEffect(() => {
-    // Check if user is logged in
-    const checkUser = async () => {
-      if (!supabase) {
+    // Add timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      if (loading) {
+        addDebug("❌ Loading timeout - forcing stop")
         setLoading(false)
-        return
+        setError("Loading timeout - please refresh the page")
       }
+    }, 10000) // 10 second timeout
 
-      const { data: authUser } = await supabase.auth.getUser()
+    const checkUser = async () => {
+      try {
+        addDebug("🔍 Starting user check...")
 
-      if (authUser.user) {
-        // Try to get user from our users table
-        const { data: userData } = await getCurrentUser()
-
-        if (userData) {
-          setUser(userData)
-        } else {
-          // Create user record if it doesn't exist
-          const { data: newUser } = await createOrUpdateUser({
-            name: authUser.user.email?.split("@")[0] || "User",
-            email: authUser.user.email || "",
-          })
-          if (newUser) {
-            setUser(newUser)
-          }
+        if (!supabase) {
+          addDebug("❌ Supabase not initialized")
+          setError("Supabase not configured")
+          setLoading(false)
+          return
         }
-      }
 
-      setLoading(false)
+        addDebug("✅ Supabase initialized, checking auth...")
+
+        const { data: authUser, error: authError } = await supabase.auth.getUser()
+        addDebug(`🔍 Auth check complete. User: ${authUser.user ? "found" : "not found"}`)
+
+        if (authError) {
+          addDebug(`❌ Auth error: ${authError.message}`)
+          setError(`Auth error: ${authError.message}`)
+          setLoading(false)
+          return
+        }
+
+        if (authUser.user) {
+          addDebug(`✅ User authenticated: ${authUser.user.email}`)
+          addDebug("🔍 Getting user data from database...")
+
+          const { data: userData, error: userError } = await getCurrentUser()
+          addDebug(`🔍 Database query complete. User data: ${userData ? "found" : "not found"}`)
+
+          if (userError) {
+            addDebug(`❌ Error getting user data: ${userError.message}`)
+            addDebug("🔄 Attempting to create user record...")
+
+            const { data: newUser, error: createError } = await createOrUpdateUser({
+              name: authUser.user.email?.split("@")[0] || "User",
+              email: authUser.user.email || "",
+            })
+
+            if (createError) {
+              addDebug(`❌ Error creating user: ${createError.message}`)
+              setError(`Error creating user: ${createError.message}`)
+            } else if (newUser) {
+              addDebug(`✅ User created successfully: ${newUser.name}`)
+              setUser(newUser)
+            } else {
+              addDebug("❌ User creation returned no data")
+              setError("Failed to create user record")
+            }
+          } else if (userData) {
+            addDebug(`✅ User data found: ${userData.name}`)
+            setUser(userData)
+          } else {
+            addDebug("❌ No user data returned")
+            setError("No user data found")
+          }
+        } else {
+          addDebug("ℹ️ No authenticated user")
+        }
+
+        addDebug("🏁 User check complete, setting loading to false")
+        setLoading(false)
+        clearTimeout(timeout)
+      } catch (err) {
+        addDebug(`❌ Unexpected error: ${err}`)
+        setError(`Unexpected error: ${err}`)
+        setLoading(false)
+        clearTimeout(timeout)
+      }
     }
 
     checkUser()
 
     // Listen for auth changes
     if (supabase) {
+      addDebug("🔍 Setting up auth state listener...")
       const {
         data: { subscription },
       } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === "SIGNED_IN" && session?.user) {
-          // User just signed in
-          const { data: userData } = await getCurrentUser()
+        addDebug(`🔄 Auth state changed: ${event}`)
 
-          if (userData) {
-            setUser(userData)
-          } else {
-            // Create user record
-            const { data: newUser } = await createOrUpdateUser({
+        if (event === "SIGNED_IN" && session?.user) {
+          addDebug(`✅ User signed in: ${session.user.email}`)
+
+          const { data: userData, error: userError } = await getCurrentUser()
+
+          if (userError || !userData) {
+            addDebug("🔄 Creating user record for new sign in...")
+            const { data: newUser, error: createError } = await createOrUpdateUser({
               name: session.user.email?.split("@")[0] || "User",
               email: session.user.email || "",
             })
-            if (newUser) {
+
+            if (createError) {
+              addDebug(`❌ Error creating user on sign in: ${createError.message}`)
+              setError(`Error creating user: ${createError.message}`)
+            } else if (newUser) {
+              addDebug(`✅ User created on sign in: ${newUser.name}`)
               setUser(newUser)
             }
+          } else {
+            addDebug(`✅ Existing user found on sign in: ${userData.name}`)
+            setUser(userData)
           }
         } else if (event === "SIGNED_OUT") {
+          addDebug("ℹ️ User signed out")
           setUser(null)
         }
       })
 
-      return () => subscription.unsubscribe()
+      return () => {
+        addDebug("🧹 Cleaning up auth listener")
+        subscription.unsubscribe()
+        clearTimeout(timeout)
+      }
     }
+
+    return () => clearTimeout(timeout)
   }, [])
 
   useEffect(() => {
-    // Load hangs when user is authenticated
     if (user && supabase) {
+      addDebug(`🔄 Loading hangs for user: ${user.name}`)
       loadHangs()
     }
   }, [user])
@@ -98,15 +172,24 @@ export default function LetsHangApp() {
   const loadHangs = async () => {
     if (!supabase) return
 
-    const { data, error } = await getHangs()
-    if (data && !error) {
-      setHangs(data)
+    try {
+      addDebug("🔍 Fetching hangs from database...")
+      const { data, error } = await getHangs()
+      if (error) {
+        addDebug(`❌ Error loading hangs: ${error.message}`)
+        setError(`Error loading hangs: ${error.message}`)
+      } else if (data) {
+        addDebug(`✅ Hangs loaded: ${data.length} found`)
+        setHangs(data)
+      }
+    } catch (err) {
+      addDebug(`❌ Unexpected error loading hangs: ${err}`)
+      setError(`Error loading hangs: ${err}`)
     }
   }
 
   const handleSignOut = async () => {
     if (!supabase) return
-
     await supabase.auth.signOut()
     setUser(null)
     setHangs([])
@@ -173,10 +256,55 @@ export default function LetsHangApp() {
 
   if (loading) {
     return (
-      <div className="max-w-sm mx-auto min-h-screen flex items-center justify-center">
+      <div className="max-w-sm mx-auto min-h-screen flex items-center justify-center p-4">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black mx-auto mb-4"></div>
-          <p>Loading...</p>
+          <p className="mb-4">Loading...</p>
+
+          {/* Debug info */}
+          <div className="text-left bg-gray-100 p-3 rounded text-xs max-h-40 overflow-y-auto">
+            <p className="font-bold mb-2">Debug Info:</p>
+            {debugInfo.map((info, index) => (
+              <p key={index} className="mb-1">
+                {info}
+              </p>
+            ))}
+          </div>
+
+          <button
+            onClick={() => {
+              setLoading(false)
+              setError("Manually stopped loading")
+            }}
+            className="mt-4 px-4 py-2 bg-red-500 text-white rounded text-sm"
+          >
+            Stop Loading
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-sm mx-auto min-h-screen flex items-center justify-center p-4">
+        <div className="text-center">
+          <h2 className="text-xl font-bold mb-4 text-red-600">Error</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+
+          {/* Debug info */}
+          <div className="text-left bg-gray-100 p-3 rounded text-xs max-h-40 overflow-y-auto mb-4">
+            <p className="font-bold mb-2">Debug Info:</p>
+            {debugInfo.map((info, index) => (
+              <p key={index} className="mb-1">
+                {info}
+              </p>
+            ))}
+          </div>
+
+          <button onClick={() => window.location.reload()} className="px-4 py-2 bg-black text-white rounded-md">
+            Retry
+          </button>
         </div>
       </div>
     )
