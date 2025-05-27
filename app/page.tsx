@@ -14,7 +14,7 @@ import {
 } from "@/lib/supabase"
 import AuthForm from "@/components/AuthForm"
 import type { User, Hang } from "@/lib/supabase"
-import { Plus, Clock, MapPin, Users, Sun, Moon, Share, Home, ChevronDown, ChevronUp, Send, LogOut } from "lucide-react"
+import { Plus, Clock, MapPin, Users, Sun, Moon, Share, Home, LogOut } from "lucide-react"
 
 export default function LetsHangApp() {
   const [user, setUser] = useState<User | null>(null)
@@ -29,18 +29,11 @@ export default function LetsHangApp() {
 
   const addDebug = (message: string) => {
     console.log(message)
-    setDebugInfo((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${message}`])
+    setDebugInfo((prev) => [...prev.slice(-10), `${new Date().toLocaleTimeString()}: ${message}`])
   }
 
   useEffect(() => {
-    // Add timeout to prevent infinite loading
-    const timeout = setTimeout(() => {
-      if (loading) {
-        addDebug("❌ Loading timeout - forcing stop")
-        setLoading(false)
-        setError("Loading timeout - please refresh the page")
-      }
-    }, 10000) // 10 second timeout
+    let mounted = true
 
     const checkUser = async () => {
       try {
@@ -48,8 +41,10 @@ export default function LetsHangApp() {
 
         if (!supabase) {
           addDebug("❌ Supabase not initialized")
-          setError("Supabase not configured")
-          setLoading(false)
+          if (mounted) {
+            setError("Supabase not configured")
+            setLoading(false)
+          }
           return
         }
 
@@ -59,9 +54,9 @@ export default function LetsHangApp() {
         addDebug(`🔍 Auth check complete. User: ${authUser.user ? "found" : "not found"}`)
 
         if (authError) {
-          addDebug(`❌ Auth error: ${authError.message}`)
-          setError(`Auth error: ${authError.message}`)
-          setLoading(false)
+          addDebug(`⚠️ Auth error (this is normal if not logged in): ${authError.message}`)
+          // Don't set this as an error - it's normal when not logged in
+          if (mounted) setLoading(false)
           return
         }
 
@@ -73,8 +68,7 @@ export default function LetsHangApp() {
           addDebug(`🔍 Database query complete. User data: ${userData ? "found" : "not found"}`)
 
           if (userError) {
-            addDebug(`❌ Error getting user data: ${userError.message}`)
-            addDebug("🔄 Attempting to create user record...")
+            addDebug(`⚠️ User not in database, creating: ${userError.message}`)
 
             const { data: newUser, error: createError } = await createOrUpdateUser({
               name: authUser.user.email?.split("@")[0] || "User",
@@ -83,33 +77,26 @@ export default function LetsHangApp() {
 
             if (createError) {
               addDebug(`❌ Error creating user: ${createError.message}`)
-              setError(`Error creating user: ${createError.message}`)
+              if (mounted) setError(`Error creating user: ${createError.message}`)
             } else if (newUser) {
               addDebug(`✅ User created successfully: ${newUser.name}`)
-              setUser(newUser)
-            } else {
-              addDebug("❌ User creation returned no data")
-              setError("Failed to create user record")
+              if (mounted) setUser(newUser)
             }
           } else if (userData) {
             addDebug(`✅ User data found: ${userData.name}`)
-            setUser(userData)
-          } else {
-            addDebug("❌ No user data returned")
-            setError("No user data found")
+            if (mounted) setUser(userData)
           }
         } else {
-          addDebug("ℹ️ No authenticated user")
+          addDebug("ℹ️ No authenticated user - showing login form")
         }
 
-        addDebug("🏁 User check complete, setting loading to false")
-        setLoading(false)
-        clearTimeout(timeout)
+        if (mounted) setLoading(false)
       } catch (err) {
         addDebug(`❌ Unexpected error: ${err}`)
-        setError(`Unexpected error: ${err}`)
-        setLoading(false)
-        clearTimeout(timeout)
+        if (mounted) {
+          setError(`Unexpected error: ${err}`)
+          setLoading(false)
+        }
       }
     }
 
@@ -137,29 +124,30 @@ export default function LetsHangApp() {
 
             if (createError) {
               addDebug(`❌ Error creating user on sign in: ${createError.message}`)
-              setError(`Error creating user: ${createError.message}`)
+              if (mounted) setError(`Error creating user: ${createError.message}`)
             } else if (newUser) {
               addDebug(`✅ User created on sign in: ${newUser.name}`)
-              setUser(newUser)
+              if (mounted) setUser(newUser)
             }
           } else {
             addDebug(`✅ Existing user found on sign in: ${userData.name}`)
-            setUser(userData)
+            if (mounted) setUser(userData)
           }
         } else if (event === "SIGNED_OUT") {
           addDebug("ℹ️ User signed out")
-          setUser(null)
+          if (mounted) setUser(null)
         }
       })
 
       return () => {
-        addDebug("🧹 Cleaning up auth listener")
+        mounted = false
         subscription.unsubscribe()
-        clearTimeout(timeout)
       }
     }
 
-    return () => clearTimeout(timeout)
+    return () => {
+      mounted = false
+    }
   }, [])
 
   useEffect(() => {
@@ -321,8 +309,9 @@ export default function LetsHangApp() {
     )
   }
 
+  // Show login form if no user
   if (!user) {
-    return <AuthForm isDarkMode={isDarkMode} />
+    return <AuthForm isDarkMode={false} />
   }
 
   const themeClasses = isDarkMode ? "bg-gray-900 text-white" : "bg-white text-black"
@@ -452,137 +441,6 @@ export default function LetsHangApp() {
                           Not Going
                         </button>
                       </div>
-
-                      {/* Expand/Collapse Button */}
-                      <button
-                        onClick={() => setExpandedHangId(isExpanded ? null : hang.id)}
-                        className={`w-full text-sm flex items-center justify-center py-2 ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}
-                      >
-                        {isExpanded ? <ChevronUp className="w-4 h-4 mr-1" /> : <ChevronDown className="w-4 h-4 mr-1" />}
-                        {isExpanded ? "Show Less" : "Show More"}
-                      </button>
-
-                      {/* Expanded Content */}
-                      {isExpanded && (
-                        <div
-                          className={`mt-4 pt-4 border-t space-y-4 ${isDarkMode ? "border-gray-700" : "border-gray-100"}`}
-                        >
-                          {/* About */}
-                          <div>
-                            <h4 className="font-medium mb-2">About this hang</h4>
-                            <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-                              {hang.description || "No description provided."}
-                            </p>
-                          </div>
-
-                          {/* Who's going */}
-                          <div>
-                            <h4 className="font-medium mb-2">Who's going ({goingCount})</h4>
-                            <div className="space-y-2">
-                              {hang.attendees
-                                ?.filter((attendee) => attendee.status === "going")
-                                .map((attendee) => (
-                                  <div key={attendee.id} className="flex items-center gap-3">
-                                    <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                                      <span className="text-xs font-medium text-black">
-                                        {attendee.user?.name?.charAt(0).toUpperCase() || "?"}
-                                      </span>
-                                    </div>
-                                    <span className="text-sm">{attendee.user?.name || "Unknown"}</span>
-                                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                                      {attendee.status}
-                                    </span>
-                                  </div>
-                                ))}
-                            </div>
-                          </div>
-
-                          {/* Suggest a change */}
-                          <div>
-                            <h4 className="font-medium mb-3">Suggest a change</h4>
-
-                            {/* Type selector */}
-                            <div className="flex gap-1 mb-3">
-                              <button
-                                onClick={() => setSelectedSuggestionType("time")}
-                                className={`px-3 py-1 text-xs rounded transition-colors ${
-                                  selectedSuggestionType === "time"
-                                    ? "bg-gray-200 text-black"
-                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                }`}
-                              >
-                                <Clock className="w-3 h-3 inline mr-1" />
-                                Time
-                              </button>
-                              <button
-                                onClick={() => setSelectedSuggestionType("location")}
-                                className={`px-3 py-1 text-xs rounded transition-colors ${
-                                  selectedSuggestionType === "location"
-                                    ? "bg-gray-200 text-black"
-                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                }`}
-                              >
-                                <MapPin className="w-3 h-3 inline mr-1" />
-                                Location
-                              </button>
-                              <button
-                                onClick={() => setSelectedSuggestionType("general")}
-                                className={`px-3 py-1 text-xs rounded transition-colors ${
-                                  selectedSuggestionType === "general"
-                                    ? "bg-black text-white"
-                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                }`}
-                              >
-                                General
-                              </button>
-                            </div>
-
-                            {/* Suggestion input */}
-                            <form onSubmit={(e) => handleAddSuggestion(e, hang.id)} className="flex gap-2">
-                              <textarea
-                                name="suggestion"
-                                placeholder={`Type your ${selectedSuggestionType} suggestion here...`}
-                                className={`flex-1 px-3 py-2 border rounded-md text-sm resize-none ${
-                                  isDarkMode
-                                    ? "border-gray-600 bg-gray-700 text-white placeholder-gray-400"
-                                    : "border-gray-300 bg-white text-black"
-                                }`}
-                                rows={2}
-                              />
-                              <button
-                                type="submit"
-                                className={`px-3 py-2 rounded-md transition-colors ${
-                                  isDarkMode
-                                    ? "bg-white text-black hover:bg-gray-200"
-                                    : "bg-black text-white hover:bg-gray-800"
-                                }`}
-                              >
-                                <Send className="w-4 h-4" />
-                              </button>
-                            </form>
-
-                            {/* Suggestions list */}
-                            {hang.suggestions && hang.suggestions.length > 0 && (
-                              <div className="mt-3 space-y-2">
-                                {hang.suggestions.map((suggestion) => (
-                                  <div
-                                    key={suggestion.id}
-                                    className={`p-2 rounded text-sm ${isDarkMode ? "bg-gray-700" : "bg-gray-50"}`}
-                                  >
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span className="font-medium">{suggestion.user?.name || "Unknown"}</span>
-                                      <span className="text-xs bg-gray-200 text-gray-800 px-2 py-1 rounded">
-                                        {suggestion.type}
-                                      </span>
-                                    </div>
-                                    <p>{suggestion.content}</p>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )
                 })}
