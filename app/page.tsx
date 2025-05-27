@@ -33,43 +33,36 @@ export default function LetsHangApp() {
   }
 
   useEffect(() => {
-    let mounted = true
-
     const checkUser = async () => {
       try {
         addDebug("🔍 Starting user check...")
 
         if (!supabase) {
           addDebug("❌ Supabase not initialized")
-          if (mounted) {
-            setError("Supabase not configured")
-            setLoading(false)
-          }
+          setError("Supabase not configured")
+          setLoading(false)
           return
         }
 
         addDebug("✅ Supabase initialized, checking auth...")
 
+        // Simple auth check without listener
         const { data: authUser, error: authError } = await supabase.auth.getUser()
         addDebug(`🔍 Auth check complete. User: ${authUser.user ? "found" : "not found"}`)
 
         if (authError) {
-          addDebug(`⚠️ Auth error (this is normal if not logged in): ${authError.message}`)
-          // Don't set this as an error - it's normal when not logged in
-          if (mounted) setLoading(false)
+          addDebug(`⚠️ Auth error: ${authError.message}`)
+          setLoading(false)
           return
         }
 
         if (authUser.user) {
           addDebug(`✅ User authenticated: ${authUser.user.email}`)
-          addDebug("🔍 Getting user data from database...")
 
           const { data: userData, error: userError } = await getCurrentUser()
-          addDebug(`🔍 Database query complete. User data: ${userData ? "found" : "not found"}`)
 
-          if (userError) {
-            addDebug(`⚠️ User not in database, creating: ${userError.message}`)
-
+          if (userError || !userData) {
+            addDebug("🔄 Creating user record...")
             const { data: newUser, error: createError } = await createOrUpdateUser({
               name: authUser.user.email?.split("@")[0] || "User",
               email: authUser.user.email || "",
@@ -77,77 +70,28 @@ export default function LetsHangApp() {
 
             if (createError) {
               addDebug(`❌ Error creating user: ${createError.message}`)
-              if (mounted) setError(`Error creating user: ${createError.message}`)
+              setError(`Error creating user: ${createError.message}`)
             } else if (newUser) {
-              addDebug(`✅ User created successfully: ${newUser.name}`)
-              if (mounted) setUser(newUser)
+              addDebug(`✅ User created: ${newUser.name}`)
+              setUser(newUser)
             }
-          } else if (userData) {
-            addDebug(`✅ User data found: ${userData.name}`)
-            if (mounted) setUser(userData)
+          } else {
+            addDebug(`✅ User found: ${userData.name}`)
+            setUser(userData)
           }
         } else {
-          addDebug("ℹ️ No authenticated user - showing login form")
+          addDebug("ℹ️ No user - will show login form")
         }
 
-        if (mounted) setLoading(false)
+        setLoading(false)
       } catch (err) {
-        addDebug(`❌ Unexpected error: ${err}`)
-        if (mounted) {
-          setError(`Unexpected error: ${err}`)
-          setLoading(false)
-        }
+        addDebug(`❌ Error: ${err}`)
+        setError(`Error: ${err}`)
+        setLoading(false)
       }
     }
 
     checkUser()
-
-    // Listen for auth changes
-    if (supabase) {
-      addDebug("🔍 Setting up auth state listener...")
-      const {
-        data: { subscription },
-      } = supabase.auth.onAuthStateChange(async (event, session) => {
-        addDebug(`🔄 Auth state changed: ${event}`)
-
-        if (event === "SIGNED_IN" && session?.user) {
-          addDebug(`✅ User signed in: ${session.user.email}`)
-
-          const { data: userData, error: userError } = await getCurrentUser()
-
-          if (userError || !userData) {
-            addDebug("🔄 Creating user record for new sign in...")
-            const { data: newUser, error: createError } = await createOrUpdateUser({
-              name: session.user.email?.split("@")[0] || "User",
-              email: session.user.email || "",
-            })
-
-            if (createError) {
-              addDebug(`❌ Error creating user on sign in: ${createError.message}`)
-              if (mounted) setError(`Error creating user: ${createError.message}`)
-            } else if (newUser) {
-              addDebug(`✅ User created on sign in: ${newUser.name}`)
-              if (mounted) setUser(newUser)
-            }
-          } else {
-            addDebug(`✅ Existing user found on sign in: ${userData.name}`)
-            if (mounted) setUser(userData)
-          }
-        } else if (event === "SIGNED_OUT") {
-          addDebug("ℹ️ User signed out")
-          if (mounted) setUser(null)
-        }
-      })
-
-      return () => {
-        mounted = false
-        subscription.unsubscribe()
-      }
-    }
-
-    return () => {
-      mounted = false
-    }
   }, [])
 
   useEffect(() => {
